@@ -61,11 +61,25 @@ export interface SurfEnvelope<T> {
   [extra: string]: unknown;
 }
 
-// "social-ranking" → "/social/ranking" (first dash becomes a slash)
-function commandToPath(command: string): string {
-  const dash = command.indexOf("-");
-  if (dash < 0) return `/${command}`;
-  return `/${command.slice(0, dash)}/${command.slice(dash + 1)}`;
+// Surf gateway has no derivable command→path rule.
+// e.g. social-engagement-score keeps the hyphen but social-smart-followers-history
+// splits at -history; search-social-posts splits every dash but search-prediction-market
+// keeps it. Source of truth: https://api.asksurf.ai/gateway/openapi.json.
+// Add a new line whenever the app calls a new surf command.
+const COMMAND_PATH: Record<string, string> = {
+  "social-ranking": "/social/ranking",
+  "social-mindshare": "/social/mindshare",
+  "social-detail": "/social/detail",
+  "social-smart-followers-history": "/social/smart-followers/history",
+  "search-social-posts": "/search/social/posts",
+  "search-project": "/search/project",
+  "search-events": "/search/events",
+  "project-ai-news": "/project/ai-news",
+  "news-feed": "/news/feed",
+};
+
+function commandToPath(command: string): string | null {
+  return COMMAND_PATH[command] ?? null;
 }
 
 // CLI flags are kebab-case; HTTP query params are snake_case.
@@ -132,6 +146,15 @@ async function httpCall<T>(
   timeoutMs: number
 ): Promise<SurfEnvelope<T>> {
   const path = commandToPath(command);
+  if (!path) {
+    return {
+      data: undefined as unknown as T,
+      error: {
+        code: "UNKNOWN_COMMAND",
+        message: `No HTTP path mapping for surf command "${command}". Add it to COMMAND_PATH in src/lib/surf.ts.`,
+      },
+    };
+  }
   const url = new URL(BASE_URL + path);
   for (const [key, value] of Object.entries(args)) {
     if (value === undefined || value === null || value === "") continue;
